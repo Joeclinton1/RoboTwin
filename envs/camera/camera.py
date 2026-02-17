@@ -2,7 +2,10 @@ import sapien.core as sapien
 import numpy as np
 import pdb
 from PIL import Image, ImageColor
-import open3d as o3d
+try:
+    import open3d as o3d  # optional
+except Exception:
+    o3d = None
 import json
 import transforms3d as t3d
 import cv2

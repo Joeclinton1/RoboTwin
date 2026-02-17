@@ -1,19 +1,21 @@
 import sapien.core as sapien
 import numpy as np
 import pdb
-from .planner import MplibPlanner
-import numpy as np
 import toppra as ta
 import math
 import yaml
 import os
 import transforms3d as t3d
 from copy import deepcopy
-import sapien.core as sapien
 import envs._GLOBAL_CONFIGS as CONFIGS
 from envs.utils import transforms
-from .planner import CuroboPlanner
 import torch.multiprocessing as mp
+
+try:
+    from .planner import CuroboPlanner, MplibPlanner
+except Exception:
+    CuroboPlanner = None
+    MplibPlanner = None
 
 
 class Robot:
@@ -29,6 +31,13 @@ class Robot:
 
         self.left_js = None
         self.right_js = None
+        need_plan = kwargs.get("need_plan", True)
+        if isinstance(need_plan, str):
+            need_plan = need_plan.strip().lower() in {"1", "true", "yes", "y"}
+        self.need_plan = bool(need_plan)
+        self.communication_flag = False
+        self.left_planner = None
+        self.right_planner = None
 
         left_embodiment_args = kwargs["left_embodiment_config"]
         right_embodiment_args = kwargs["right_embodiment_config"]
@@ -123,6 +132,9 @@ class Robot:
 
     def reset(self, scene, need_topp=False, **kwargs):
         self._init_robot_(scene, need_topp, **kwargs)
+        if not self.need_plan:
+            self.init_joints()
+            return
 
         if self.communication_flag:
             if hasattr(self, "left_conn") and self.left_conn:
@@ -132,7 +144,11 @@ class Robot:
                 self.right_conn.send({"cmd": "reset"})
                 _ = self.right_conn.recv()
         else:
-            if not isinstance(self.left_planner, CuroboPlanner) or not isinstance(self.right_planner, CuroboPlanner):
+            if (
+                CuroboPlanner is None
+                or not isinstance(self.left_planner, CuroboPlanner)
+                or not isinstance(self.right_planner, CuroboPlanner)
+            ):
                 self.set_planner(scene=scene)
 
         self.init_joints()
@@ -255,6 +271,16 @@ class Robot:
         print("right ee: ", self.right_ee.get_name())
 
     def set_planner(self, scene=None):
+        if CuroboPlanner is None:
+            raise ImportError(
+                "Planner dependencies are missing. Install RoboTwin planner deps (including mplib/curobo), "
+                "or run with need_plan=False."
+            )
+        if self.need_topp and MplibPlanner is None:
+            raise ImportError(
+                "MplibPlanner is unavailable. Install mplib dependencies or disable planning/TOPP for this run."
+            )
+
         abs_left_curobo_yml_path = os.path.join(CONFIGS.ROOT_PATH, self.left_curobo_yml_path)
         abs_right_curobo_yml_path = os.path.join(CONFIGS.ROOT_PATH, self.right_curobo_yml_path)
 

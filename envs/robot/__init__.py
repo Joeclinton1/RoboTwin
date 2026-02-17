@@ -1,2 +1,5 @@
 from .robot import *
-from .planner import *
+try:
+    from .planner import *
+except Exception:
+    pass
