@@ -81,7 +81,26 @@ def pkl_files_to_hdf5_and_video(pkl_files, hdf5_path, video_path):
         pkl_file = load_pkl_file(pkl_file_path)
         append_data_to_structure(data_list, pkl_file)
 
-    images_to_video(np.array(data_list["observation"]["head_camera"]["rgb"]), out_path=video_path)
+    camera_streams = data_list.get("observation", {})
+    requested_view = os.environ.get("ROBOTWIN_VIDEO_CAMERA", "front_camera")
+    requested_view = requested_view.lower()
+
+    if requested_view in {"observer", "observer_camera", "third_view"}:
+        if "third_view_rgb" in data_list:
+            images_to_video(np.array(data_list["third_view_rgb"]), out_path=video_path)
+        else:
+            fallback = "front_camera" if "front_camera" in camera_streams else "head_camera"
+            print("observer_camera frames missing (third_view_rgb not found), "
+                  f"falling back to {fallback} for video export.")
+            images_to_video(np.array(camera_streams[fallback]["rgb"]), out_path=video_path)
+    else:
+        if requested_view in camera_streams:
+            video_camera = requested_view
+        else:
+            video_camera = "front_camera" if "front_camera" in camera_streams else "head_camera"
+            if requested_view != video_camera:
+                print(f"requested view '{requested_view}' not found, falling back to {video_camera}.")
+        images_to_video(np.array(camera_streams[video_camera]["rgb"]), out_path=video_path)
 
     with h5py.File(hdf5_path, "w") as f:
         create_hdf5_from_dict(f, data_list)
