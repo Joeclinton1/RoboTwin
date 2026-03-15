@@ -142,13 +142,17 @@ class Base_Task(gym.Env):
                 f'Objects is unstable in seed({kwags.get("seed", 0)}), unstable objects: {", ".join(unstable_list)}')
 
         if self.eval_mode:
-            with open(os.path.join(CONFIGS_PATH, "_eval_step_limit.yml"), "r") as f:
-                try:
-                    data = yaml.safe_load(f)
-                    self.step_lim = data[self.task_name]
-                except:
-                    print(f"{self.task_name} not in step limit file, set to 1000")
-                    self.step_lim = 1000
+            override_step_lim = kwags.get("eval_step_limit")
+            if override_step_lim is not None:
+                self.step_lim = int(override_step_lim)
+            else:
+                with open(os.path.join(CONFIGS_PATH, "_eval_step_limit.yml"), "r") as f:
+                    try:
+                        data = yaml.safe_load(f)
+                        self.step_lim = data[self.task_name]
+                    except:
+                        print(f"{self.task_name} not in step limit file, set to 1000")
+                        self.step_lim = 1000
 
         # info
         self.info = dict()
@@ -511,6 +515,14 @@ class Base_Task(gym.Env):
         self.cameras.update_picture()
         rgb = self.cameras.get_rgb()
         save_img(save_path, rgb[camera_name]['rgb'])
+
+    def _eval_video_frame(self):
+        requested_view = os.environ.get("ROBOTWIN_VIDEO_CAMERA", "").strip().lower()
+        if requested_view in {"observer", "observer_camera", "third_view"}:
+            third_view_rgb = self.now_obs.get("third_view_rgb")
+            if third_view_rgb is not None:
+                return third_view_rgb
+        return self.now_obs["observation"]["head_camera"]["rgb"]
 
     def _take_picture(self):  # save data
         if not self.save_data:
@@ -1509,7 +1521,7 @@ class Base_Task(gym.Env):
 
         eval_video_freq = 1  # fixed
         if (self.eval_video_path is not None and self.take_action_cnt % eval_video_freq == 0):
-            self.eval_video_ffmpeg.stdin.write(self.now_obs["observation"]["head_camera"]["rgb"].tobytes())
+            self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
 
         self.take_action_cnt += 1
         print(f"step: \033[92m{self.take_action_cnt} / {self.step_lim}\033[0m", end="\r")
@@ -1685,7 +1697,7 @@ class Base_Task(gym.Env):
                 self.eval_success = True
                 self.get_obs() # update obs
                 if (self.eval_video_path is not None):
-                    self.eval_video_ffmpeg.stdin.write(self.now_obs["observation"]["head_camera"]["rgb"].tobytes())
+                    self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
                 return
 
         self._update_render()

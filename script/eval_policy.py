@@ -82,7 +82,7 @@ def main(usr_args):
     args["task_config"] = task_config
     args["ckpt_setting"] = ckpt_setting
     # Forward selected CLI overrides into task runtime args.
-    for key in ("need_plan", "render_freq", "save_data", "collect_data", "eval_video_log"):
+    for key in ("need_plan", "render_freq", "save_data", "collect_data", "eval_video_log", "eval_step_limit"):
         if key in usr_args:
             args[key] = usr_args[key]
 
