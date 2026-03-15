@@ -81,6 +81,9 @@ def main(usr_args):
     args['task_name'] = task_name
     args["task_config"] = task_config
     args["ckpt_setting"] = ckpt_setting
+    for key in ("need_plan", "render_freq", "save_data", "collect_data", "eval_video_log"):
+        if key in usr_args:
+            args[key] = usr_args[key]
 
     embodiment_type = args.get("embodiment")
     embodiment_config_path = os.path.join(CONFIGS_PATH, "_embodiment_config.yml")
@@ -159,7 +162,8 @@ def main(usr_args):
 
     st_seed = 100000 * (1 + seed)
     suc_nums = []
-    test_num = 100
+    test_num = int(usr_args.get("test_num", 100))
+    expert_check = bool(usr_args.get("expert_check", True))
     topk = 1
 
     model = get_model(usr_args)
@@ -168,7 +172,8 @@ def main(usr_args):
                                    args,
                                    model,
                                    st_seed,
-                                   test_num=test_num,
+                                    test_num=test_num,
+                                   expert_check=expert_check,
                                    video_size=video_size,
                                    instruction_type=instruction_type)
     suc_nums.append(suc_num)
@@ -192,12 +197,12 @@ def eval_policy(task_name,
                 model,
                 st_seed,
                 test_num=100,
+                expert_check=True,
                 video_size=None,
                 instruction_type=None):
     print(f"\033[34mTask Name: {args['task_name']}\033[0m")
     print(f"\033[34mPolicy Name: {args['policy_name']}\033[0m")
 
-    expert_check = True
     TASK_ENV.suc = 0
     TASK_ENV.test_num = 0
 
@@ -254,9 +259,12 @@ def eval_policy(task_name,
         args["render_freq"] = render_freq
 
         TASK_ENV.setup_demo(now_ep_num=now_id, seed=now_seed, is_test=True, **args)
-        episode_info_list = [episode_info["info"]]
-        results = generate_episode_descriptions(args["task_name"], episode_info_list, test_num)
-        instruction = np.random.choice(results[0][instruction_type])
+        if expert_check:
+            episode_info_list = [episode_info["info"]]
+            results = generate_episode_descriptions(args["task_name"], episode_info_list, test_num)
+            instruction = np.random.choice(results[0][instruction_type])
+        else:
+            instruction = args["task_name"]
         TASK_ENV.set_instruction(instruction=instruction)  # set language instruction
 
         if TASK_ENV.eval_video_path is not None:

@@ -109,7 +109,10 @@ class Base_Task(gym.Env):
 
         self.eval_success = False
         self.table_z_bias = (np.random.uniform(low=-self.random_table_height, high=0) + table_height_bias)  # TODO
-        self.need_plan = kwags.get("need_plan", True)
+        need_plan = kwags.get("need_plan", True)
+        if isinstance(need_plan, str):
+            need_plan = need_plan.strip().lower() in {"1", "true", "yes", "y"}
+        self.need_plan = bool(need_plan)
         self.left_joint_path = kwags.get("left_joint_path", [])
         self.right_joint_path = kwags.get("right_joint_path", [])
         self.left_cnt = 0
@@ -211,10 +214,13 @@ class Base_Task(gym.Env):
         # give renderer to sapien sim
         self.engine.set_renderer(self.renderer)
 
-        sapien.render.set_camera_shader_dir("rt")
-        sapien.render.set_ray_tracing_samples_per_pixel(32)
-        sapien.render.set_ray_tracing_path_depth(8)
-        sapien.render.set_ray_tracing_denoiser("oidn")
+        if os.environ.get("SAPIEN_DISABLE_RAY_TRACING", "0") == "1":
+            sapien.render.set_camera_shader_dir("default")
+        else:
+            sapien.render.set_camera_shader_dir("rt")
+            sapien.render.set_ray_tracing_samples_per_pixel(32)
+            sapien.render.set_ray_tracing_path_depth(8)
+            sapien.render.set_ray_tracing_denoiser("oidn")
 
         # declare sapien scene
         scene_config = sapien.SceneConfig()
@@ -387,7 +393,8 @@ class Base_Task(gym.Env):
         """
         if not hasattr(self, "robot"):
             self.robot = Robot(self.scene, self.need_topp, **kwags)
-            self.robot.set_planner(self.scene)
+            if self.need_plan:
+                self.robot.set_planner(self.scene)
             self.robot.init_joints()
         else:
             self.robot.reset(self.scene, self.need_topp, **kwags)
@@ -505,6 +512,15 @@ class Base_Task(gym.Env):
         rgb = self.cameras.get_rgb()
         save_img(save_path, rgb[camera_name]['rgb'])
 
+    def _eval_video_frame(self):
+        camera_mode = os.environ.get("ROBOTWIN_VIDEO_CAMERA", "head_camera").strip().lower()
+        if camera_mode == "observer":
+            third_view = self.now_obs.get("third_view_rgb")
+            if third_view is not None:
+                return third_view
+            raise KeyError("Observer video requested but `third_view_rgb` is missing from the observation.")
+        return self.now_obs["observation"]["head_camera"]["rgb"]
+
     def _take_picture(self):  # save data
         if not self.save_data:
             return
@@ -615,7 +631,17 @@ class Base_Task(gym.Env):
         left_result, right_result = None, None
 
         if set_tag == "left" or set_tag == "together":
-            left_result = self.robot.left_plan_grippers(self.robot.get_left_gripper_val(), left_pos)
+            if self.need_plan:
+                left_result = self.robot.left_plan_grippers(self.robot.get_left_gripper_val(), left_pos)
+            else:
+                num_step = 200
+                now_val = self.robot.get_left_gripper_val()
+                vals = np.linspace(now_val, left_pos, num_step)
+                left_result = {
+                    "num_step": num_step,
+                    "per_step": (left_pos - now_val) / num_step,
+                    "result": vals,
+                }
             left_gripper_step = left_result["per_step"]
             left_gripper_res = left_result["result"]
             num_step = left_result["num_step"]
@@ -630,7 +656,17 @@ class Base_Task(gym.Env):
                 return left_result
 
         if set_tag == "right" or set_tag == "together":
-            right_result = self.robot.right_plan_grippers(self.robot.get_right_gripper_val(), right_pos)
+            if self.need_plan:
+                right_result = self.robot.right_plan_grippers(self.robot.get_right_gripper_val(), right_pos)
+            else:
+                num_step = 200
+                now_val = self.robot.get_right_gripper_val()
+                vals = np.linspace(now_val, right_pos, num_step)
+                right_result = {
+                    "num_step": num_step,
+                    "per_step": (right_pos - now_val) / num_step,
+                    "result": vals,
+                }
             right_gripper_step = right_result["per_step"]
             right_gripper_res = right_result["result"]
             num_step = right_result["num_step"]
@@ -1482,7 +1518,7 @@ class Base_Task(gym.Env):
 
         eval_video_freq = 1  # fixed
         if (self.eval_video_path is not None and self.take_action_cnt % eval_video_freq == 0):
-            self.eval_video_ffmpeg.stdin.write(self.now_obs["observation"]["head_camera"]["rgb"].tobytes())
+            self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
 
         self.take_action_cnt += 1
         print(f"step: \033[92m{self.take_action_cnt} / {self.step_lim}\033[0m", end="\r")
@@ -1658,7 +1694,7 @@ class Base_Task(gym.Env):
                 self.eval_success = True
                 self.get_obs() # update obs
                 if (self.eval_video_path is not None):
-                    self.eval_video_ffmpeg.stdin.write(self.now_obs["observation"]["head_camera"]["rgb"].tobytes())
+                    self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
                 return
 
         self._update_render()

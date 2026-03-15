@@ -9,79 +9,89 @@ import json
 from pathlib import Path
 
 
+def _load_json_if_exists(path: Path, default):
+    if not path.exists():
+        return default
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def get_all_cluttered_objects():
     cluttered_objects_info = {}
     cluttered_objects_name = []
 
     # load from cluttered_objects
-    cluttered_objects_config = json.load(open(Path("./assets/objects/objaverse/list.json"), "r", encoding="utf-8"))
-    cluttered_objects_name += cluttered_objects_config["item_names"]
-    for model_name, model_ids in cluttered_objects_config["list_of_items"].items():
-        cluttered_objects_info[model_name] = {
-            "ids": model_ids,
-            "type": "urdf",
-            "root": f"objects/objaverse/{model_name}",
-        }
-        params = {}
-        for model_id in model_ids:
-            model_full_name = f"{model_name}_{model_id}"
-            params[model_id] = {
-                "z_max": cluttered_objects_config["z_max"][model_full_name],
-                "radius": cluttered_objects_config["radius"][model_full_name],
-                "z_offset": cluttered_objects_config["z_offset"][model_full_name],
+    objaverse_list_path = Path("./assets/objects/objaverse/list.json")
+    cluttered_objects_config = _load_json_if_exists(objaverse_list_path, None)
+    if cluttered_objects_config is not None:
+        cluttered_objects_name += cluttered_objects_config["item_names"]
+        for model_name, model_ids in cluttered_objects_config["list_of_items"].items():
+            cluttered_objects_info[model_name] = {
+                "ids": model_ids,
+                "type": "urdf",
+                "root": f"objects/objaverse/{model_name}",
             }
-        cluttered_objects_info[model_name]["params"] = params
+            params = {}
+            for model_id in model_ids:
+                model_full_name = f"{model_name}_{model_id}"
+                params[model_id] = {
+                    "z_max": cluttered_objects_config["z_max"][model_full_name],
+                    "radius": cluttered_objects_config["radius"][model_full_name],
+                    "z_offset": cluttered_objects_config["z_offset"][model_full_name],
+                }
+            cluttered_objects_info[model_name]["params"] = params
 
     # load from objects
     objects_dir = Path("./assets/objects")
-    for model_dir in objects_dir.iterdir():
-        if not model_dir.is_dir():
-            continue
-        if re.search(r"^(\d+)_(.*)", model_dir.name) is None:
-            continue
-        model_name = model_dir.name
-        model_id_list, params = [], {}
-        for model_cfg in model_dir.iterdir():
-            if model_cfg.is_dir() or model_cfg.suffix != ".json":
+    if objects_dir.exists():
+        for model_dir in objects_dir.iterdir():
+            if not model_dir.is_dir():
                 continue
-
-            # get model id
-            model_id = re.search(r"model_data(\d+)", model_cfg.name)
-            if not model_id:
+            if re.search(r"^(\d+)_(.*)", model_dir.name) is None:
                 continue
-            model_id = model_id.group(1)
-
-            try:
-                # get model params
-                model_config: dict = json.load(open(model_cfg, "r", encoding="utf-8"))
-                if "center" not in model_config or "extents" not in model_config:
+            model_name = model_dir.name
+            model_id_list, params = [], {}
+            for model_cfg in model_dir.iterdir():
+                if model_cfg.is_dir() or model_cfg.suffix != ".json":
                     continue
-                if model_config.get("stable", False) is False:
-                    continue
-                center = model_config["center"]
-                extents = model_config["extents"]
-                scale = model_config.get("scale", [1.0, 1.0, 1.0])
-                # 0: x, 1: z, 2: y
-                params[model_id] = {
-                    "z_max": (extents[1] + center[1]) * scale[1],
-                    "radius": max(extents[0] * scale[0], extents[2] * scale[2]) / 2,
-                    "z_offset": 0,
-                }
-                model_id_list.append(model_id)
-            except Exception as e:
-                print(f"Error loading model config {model_cfg}: {e}")
-        if len(model_id_list) == 0:
-            continue
-        cluttered_objects_name.append(model_name)
-        model_id_list.sort()
-        cluttered_objects_info[model_name] = {
-            "ids": model_id_list,
-            "type": "glb",
-            "root": f"objects/{model_name}",
-            "params": params,
-        }
 
-    same_obj = json.load(open(Path("./assets/objects/same.json"), "r", encoding="utf-8"))
+                # get model id
+                model_id = re.search(r"model_data(\d+)", model_cfg.name)
+                if not model_id:
+                    continue
+                model_id = model_id.group(1)
+
+                try:
+                    # get model params
+                    model_config: dict = json.load(open(model_cfg, "r", encoding="utf-8"))
+                    if "center" not in model_config or "extents" not in model_config:
+                        continue
+                    if model_config.get("stable", False) is False:
+                        continue
+                    center = model_config["center"]
+                    extents = model_config["extents"]
+                    scale = model_config.get("scale", [1.0, 1.0, 1.0])
+                    # 0: x, 1: z, 2: y
+                    params[model_id] = {
+                        "z_max": (extents[1] + center[1]) * scale[1],
+                        "radius": max(extents[0] * scale[0], extents[2] * scale[2]) / 2,
+                        "z_offset": 0,
+                    }
+                    model_id_list.append(model_id)
+                except Exception as e:
+                    print(f"Error loading model config {model_cfg}: {e}")
+            if len(model_id_list) == 0:
+                continue
+            cluttered_objects_name.append(model_name)
+            model_id_list.sort()
+            cluttered_objects_info[model_name] = {
+                "ids": model_id_list,
+                "type": "glb",
+                "root": f"objects/{model_name}",
+                "params": params,
+            }
+
+    same_obj = _load_json_if_exists(Path("./assets/objects/same.json"), {})
     cluttered_objects_name = list(cluttered_objects_name)
     cluttered_objects_name.sort()
     return cluttered_objects_info, cluttered_objects_name, same_obj
