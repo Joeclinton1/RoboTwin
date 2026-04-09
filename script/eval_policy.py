@@ -61,19 +61,20 @@ def get_embodiment_config(robot_file):
     return embodiment_args
 
 
-def main(usr_args):
+def prepare_eval_context(usr_args):
+    """Set up task env, configs, and return everything eval_policy() needs.
+
+    Returns a dict with keys: task_name, TASK_ENV, args, test_num,
+    expert_check, video_size, instruction_type, st_seed, save_dir, usr_args.
+    The returned usr_args has left_arm_dim/right_arm_dim populated.
+    """
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     task_name = usr_args["task_name"]
     task_config = usr_args["task_config"]
     ckpt_setting = usr_args["ckpt_setting"]
-    # checkpoint_num = usr_args['checkpoint_num']
     policy_name = usr_args["policy_name"]
     instruction_type = usr_args["instruction_type"]
-    save_dir = None
-    video_save_dir = None
     video_size = None
-
-    get_model = eval_function_decorator(policy_name, "get_model")
 
     with open(f"./task_config/{task_config}.yml", "r", encoding="utf-8") as f:
         args = yaml.load(f.read(), Loader=yaml.FullLoader)
@@ -81,7 +82,6 @@ def main(usr_args):
     args['task_name'] = task_name
     args["task_config"] = task_config
     args["ckpt_setting"] = ckpt_setting
-    # Forward selected CLI overrides into task runtime args.
     for key in ("need_plan", "render_freq", "save_data", "collect_data", "eval_video_log", "eval_step_limit"):
         if key in usr_args:
             args[key] = usr_args[key]
@@ -127,15 +127,14 @@ def main(usr_args):
 
     save_dir = Path(f"eval_result/{task_name}/{policy_name}/{task_config}/{ckpt_setting}/{current_time}")
     save_dir.mkdir(parents=True, exist_ok=True)
+    args["save_path"] = str(save_dir)
 
     if args["eval_video_log"]:
-        video_save_dir = save_dir
         camera_config = get_camera_config(args["camera"]["head_camera_type"])
         video_size = str(camera_config["w"]) + "x" + str(camera_config["h"])
-        video_save_dir.mkdir(parents=True, exist_ok=True)
-        args["eval_video_save_dir"] = video_save_dir
+        save_dir.mkdir(parents=True, exist_ok=True)
+        args["eval_video_save_dir"] = save_dir
 
-    # output camera config
     print("============= Config =============\n")
     print("\033[95mMessy Table:\033[0m " + str(args["domain_randomization"]["cluttered_table"]))
     print("\033[95mRandom Background:\033[0m " + str(args["domain_randomization"]["random_background"]))
@@ -160,36 +159,47 @@ def main(usr_args):
     usr_args["right_arm_dim"] = len(args["right_embodiment_config"]["arm_joints_name"][1])
 
     seed = usr_args["seed"]
-
     st_seed = 100000 * (1 + seed)
-    suc_nums = []
     test_num = int(usr_args.get("test_num", 100))
     expert_check = bool(usr_args.get("expert_check", True))
-    topk = 1
 
-    model = get_model(usr_args)
-    st_seed, suc_num = eval_policy(task_name,
-                                   TASK_ENV,
-                                   args,
+    return {
+        "task_name": task_name,
+        "TASK_ENV": TASK_ENV,
+        "args": args,
+        "test_num": test_num,
+        "expert_check": expert_check,
+        "video_size": video_size,
+        "instruction_type": instruction_type,
+        "st_seed": st_seed,
+        "save_dir": save_dir,
+        "usr_args": usr_args,
+    }
+
+
+def main(usr_args):
+    get_model = eval_function_decorator(usr_args["policy_name"], "get_model")
+    ctx = prepare_eval_context(usr_args)
+
+    model = get_model(ctx["usr_args"])
+    st_seed, suc_num = eval_policy(ctx["task_name"],
+                                   ctx["TASK_ENV"],
+                                   ctx["args"],
                                    model,
-                                   st_seed,
-                                    test_num=test_num,
-                                   expert_check=expert_check,
-                                   video_size=video_size,
-                                   instruction_type=instruction_type)
-    suc_nums.append(suc_num)
+                                   ctx["st_seed"],
+                                   test_num=ctx["test_num"],
+                                   expert_check=ctx["expert_check"],
+                                   video_size=ctx["video_size"],
+                                   instruction_type=ctx["instruction_type"])
 
-    topk_success_rate = sorted(suc_nums, reverse=True)[:topk]
-
-    file_path = os.path.join(save_dir, f"_result.txt")
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    file_path = os.path.join(ctx["save_dir"], f"_result.txt")
     with open(file_path, "w") as file:
         file.write(f"Timestamp: {current_time}\n\n")
-        file.write(f"Instruction Type: {instruction_type}\n\n")
-        # file.write(str(task_reward) + '\n')
-        file.write("\n".join(map(str, np.array(suc_nums) / test_num)))
+        file.write(f"Instruction Type: {ctx['instruction_type']}\n\n")
+        file.write(str(np.array([suc_num]) / ctx["test_num"]))
 
     print(f"Data has been saved to {file_path}")
-    # return task_reward
 
 
 def eval_policy(task_name,
@@ -201,8 +211,8 @@ def eval_policy(task_name,
                 expert_check=True,
                 video_size=None,
                 instruction_type=None):
-    print(f"\033[34mTask Name: {args['task_name']}\033[0m")
-    print(f"\033[34mPolicy Name: {args['policy_name']}\033[0m")
+    print(f"\033[34mTask Name: {args['task_name']}\033[0m", flush=True)
+    print(f"\033[34mPolicy Name: {args['policy_name']}\033[0m", flush=True)
 
     TASK_ENV.suc = 0
     TASK_ENV.test_num = 0
@@ -220,6 +230,7 @@ def eval_policy(task_name,
     clear_cache_freq = args["clear_cache_freq"]
 
     args["eval_mode"] = True
+    print(f"[eval] starting episode loop: test_num={test_num} expert_check={expert_check} seed={now_seed}", flush=True)
 
     while succ_seed < test_num:
         render_freq = args["render_freq"]
@@ -227,26 +238,21 @@ def eval_policy(task_name,
 
         if expert_check:
             try:
+                print(f"[eval] expert_check setup_demo seed={now_seed}...", flush=True)
                 TASK_ENV.setup_demo(now_ep_num=now_id, seed=now_seed, is_test=True, **args)
+                print("[eval] expert_check play_once...", flush=True)
                 episode_info = TASK_ENV.play_once()
                 TASK_ENV.close_env()
             except UnStableError as e:
-                # print(" -------------")
-                # print("Error: ", e)
-                # print(" -------------")
                 TASK_ENV.close_env()
                 now_seed += 1
                 args["render_freq"] = render_freq
                 continue
             except Exception as e:
-                # stack_trace = traceback.format_exc()
-                # print(" -------------")
-                # print("Error: ", e)
-                # print(" -------------")
                 TASK_ENV.close_env()
                 now_seed += 1
                 args["render_freq"] = render_freq
-                print("error occurs !")
+                print(f"error occurs: {e}", flush=True)
                 continue
 
         if (not expert_check) or (TASK_ENV.plan_success and TASK_ENV.check_success()):
@@ -259,7 +265,9 @@ def eval_policy(task_name,
 
         args["render_freq"] = render_freq
 
+        print(f"[eval] setup_demo for eval seed={now_seed}...", flush=True)
         TASK_ENV.setup_demo(now_ep_num=now_id, seed=now_seed, is_test=True, **args)
+        print("[eval] setup_demo complete", flush=True)
         if expert_check:
             episode_info_list = [episode_info["info"]]
             results = generate_episode_descriptions(args["task_name"], episode_info_list, test_num)
@@ -267,7 +275,6 @@ def eval_policy(task_name,
         else:
             instruction = args["task_name"]
         TASK_ENV.set_instruction(instruction=instruction)  # set language instruction
-
         if TASK_ENV.eval_video_path is not None:
             ffmpeg = subprocess.Popen(
                 [
@@ -299,16 +306,20 @@ def eval_policy(task_name,
 
         succ = False
         reset_func(model)
+        print(f"[eval] starting episode steps (step_lim={TASK_ENV.step_lim})...", flush=True)
+        step_i = 0
         while TASK_ENV.take_action_cnt < TASK_ENV.step_lim:
+            print(f"[eval] step {step_i}: get_obs...", flush=True)
             observation = TASK_ENV.get_obs()
+            print(f"[eval] step {step_i}: eval (backbone inference)...", flush=True)
             eval_func(TASK_ENV, model, observation)
+            step_i += 1
             if TASK_ENV.eval_success:
                 succ = True
                 break
         # task_total_reward += TASK_ENV.episode_score
         if TASK_ENV.eval_video_path is not None:
             TASK_ENV._del_eval_video_ffmpeg()
-
         if succ:
             TASK_ENV.suc += 1
             print("\033[92mSuccess!\033[0m")

@@ -224,7 +224,7 @@ class Base_Task(gym.Env):
             sapien.render.set_camera_shader_dir("rt")
             sapien.render.set_ray_tracing_samples_per_pixel(32)
             sapien.render.set_ray_tracing_path_depth(8)
-            sapien.render.set_ray_tracing_denoiser("oidn")
+            sapien.render.set_ray_tracing_denoiser(os.environ.get("SAPIEN_DENOISER", "oidn"))
 
         # declare sapien scene
         scene_config = sapien.SceneConfig()
@@ -397,7 +397,7 @@ class Base_Task(gym.Env):
         """
         if not hasattr(self, "robot"):
             self.robot = Robot(self.scene, self.need_topp, **kwags)
-            if self.need_plan:
+            if self.need_plan or self.need_topp:
                 self.robot.set_planner(self.scene)
             self.robot.init_joints()
         else:
