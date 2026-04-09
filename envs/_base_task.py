@@ -1696,6 +1696,7 @@ class Base_Task(gym.Env):
             if self.check_success():
                 self.eval_success = True
                 self.get_obs() # update obs
+                self._take_picture()
                 if (self.eval_video_path is not None):
                     self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
                 return
@@ -1703,6 +1704,7 @@ class Base_Task(gym.Env):
         self._update_render()
         if self.render_freq:  # UI
             self.viewer.render()
+        self._take_picture()
 
 
     def save_camera_images(self, task_name, step_name, generate_num_id, save_dir="./camera_images"):

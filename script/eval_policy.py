@@ -210,7 +210,8 @@ def eval_policy(task_name,
                 test_num=100,
                 expert_check=True,
                 video_size=None,
-                instruction_type=None):
+                instruction_type=None,
+                episode_done_callback=None):
     print(f"\033[34mTask Name: {args['task_name']}\033[0m", flush=True)
     print(f"\033[34mPolicy Name: {args['policy_name']}\033[0m", flush=True)
 
@@ -275,6 +276,10 @@ def eval_policy(task_name,
         else:
             instruction = args["task_name"]
         TASK_ENV.set_instruction(instruction=instruction)  # set language instruction
+        if args.get("save_data", False):
+            TASK_ENV.get_obs()
+            TASK_ENV._take_picture()
+
         if TASK_ENV.eval_video_path is not None:
             ffmpeg = subprocess.Popen(
                 [
@@ -320,6 +325,17 @@ def eval_policy(task_name,
         # task_total_reward += TASK_ENV.episode_score
         if TASK_ENV.eval_video_path is not None:
             TASK_ENV._del_eval_video_ffmpeg()
+        if args.get("save_data", False):
+            TASK_ENV.merge_pkl_to_hdf5_video()
+            TASK_ENV.remove_data_cache()
+        if episode_done_callback is not None:
+            episode_done_callback(
+                episode_idx=now_id,
+                save_dir=Path(args["save_path"]).resolve(),
+                video_logged=TASK_ENV.eval_video_path is not None,
+                trajectory_logged=bool(args.get("save_data", False)),
+            )
+
         if succ:
             TASK_ENV.suc += 1
             print("\033[92mSuccess!\033[0m")
