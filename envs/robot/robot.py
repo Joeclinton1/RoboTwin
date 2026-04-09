@@ -12,7 +12,9 @@ from envs.utils import transforms
 import torch.multiprocessing as mp
 
 try:
-    from .planner import CuroboPlanner, MplibPlanner
+    from . import planner as _planner
+    CuroboPlanner = getattr(_planner, "CuroboPlanner", None)
+    MplibPlanner = getattr(_planner, "MplibPlanner", None)
 except Exception:
     CuroboPlanner = None
     MplibPlanner = None
@@ -132,7 +134,7 @@ class Robot:
 
     def reset(self, scene, need_topp=False, **kwargs):
         self._init_robot_(scene, need_topp, **kwargs)
-        if not self.need_plan:
+        if not self.need_plan and not self.need_topp:
             self.init_joints()
             return
 
@@ -271,7 +273,7 @@ class Robot:
         print("right ee: ", self.right_ee.get_name())
 
     def set_planner(self, scene=None):
-        if CuroboPlanner is None:
+        if self.need_plan and CuroboPlanner is None:
             raise ImportError(
                 "Planner dependencies are missing. Install RoboTwin planner deps (including mplib/curobo), "
                 "or run with need_plan=False."
@@ -290,7 +292,7 @@ class Robot:
             abs_left_curobo_yml_path = abs_left_curobo_yml_path.replace("curobo.yml", "curobo_left.yml")
             abs_right_curobo_yml_path = abs_right_curobo_yml_path.replace("curobo.yml", "curobo_right.yml")
 
-        if not self.communication_flag:
+        if self.need_plan and not self.communication_flag:
             self.left_planner = CuroboPlanner(self.left_entity_origion_pose,
                                               self.left_arm_joints_name,
                                               [joint.get_name() for joint in self.left_entity.get_active_joints()],
@@ -299,7 +301,7 @@ class Robot:
                                                self.right_arm_joints_name,
                                                [joint.get_name() for joint in self.right_entity.get_active_joints()],
                                                yml_path=abs_right_curobo_yml_path)
-        else:
+        elif self.need_plan:
             self.left_conn, left_child_conn = mp.Pipe()
             self.right_conn, right_child_conn = mp.Pipe()
 
