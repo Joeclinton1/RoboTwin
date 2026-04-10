@@ -87,12 +87,12 @@ def pkl_files_to_hdf5_and_video(pkl_files, hdf5_path, video_path):
 
     if requested_view in {"observer", "observer_camera", "third_view"}:
         if "third_view_rgb" in data_list:
-            images_to_video(np.array(data_list["third_view_rgb"]), out_path=video_path)
+            images_to_video(np.array(data_list["third_view_rgb"]), out_path=video_path, fps=10.0)
         else:
             fallback = "front_camera" if "front_camera" in camera_streams else "head_camera"
             print("observer_camera frames missing (third_view_rgb not found), "
                   f"falling back to {fallback} for video export.")
-            images_to_video(np.array(camera_streams[fallback]["rgb"]), out_path=video_path)
+            images_to_video(np.array(camera_streams[fallback]["rgb"]), out_path=video_path, fps=10.0)
     else:
         if requested_view in camera_streams:
             video_camera = requested_view
@@ -100,7 +100,7 @@ def pkl_files_to_hdf5_and_video(pkl_files, hdf5_path, video_path):
             video_camera = "front_camera" if "front_camera" in camera_streams else "head_camera"
             if requested_view != video_camera:
                 print(f"requested view '{requested_view}' not found, falling back to {video_camera}.")
-        images_to_video(np.array(camera_streams[video_camera]["rgb"]), out_path=video_path)
+        images_to_video(np.array(camera_streams[video_camera]["rgb"]), out_path=video_path, fps=10.0)
 
     with h5py.File(hdf5_path, "w") as f:
         create_hdf5_from_dict(f, data_list)

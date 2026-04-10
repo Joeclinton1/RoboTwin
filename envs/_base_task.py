@@ -545,7 +545,6 @@ class Base_Task(gym.Env):
         if not self.save_data:
             return
 
-        print("saving: episode = ", self.ep_num, " index = ", self.FRAME_IDX, end="\r")
 
         if self.FRAME_IDX == 0:
             self.folder_path = {"cache": f"{self.save_dir}/.cache/episode{self.ep_num}/"}
@@ -1537,7 +1536,6 @@ class Base_Task(gym.Env):
             return
 
         self.take_action_cnt += 1
-        print(f"step: \033[92m{self.take_action_cnt} / {self.step_lim}\033[0m", end="\r")
 
         self._update_render()
         if self.render_freq:
