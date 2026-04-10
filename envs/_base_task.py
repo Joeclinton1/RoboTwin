@@ -1536,10 +1536,6 @@ class Base_Task(gym.Env):
         if self.take_action_cnt == self.step_lim or self.eval_success:
             return
 
-        eval_video_freq = 1  # fixed
-        if (self.eval_video_path is not None and self.take_action_cnt % eval_video_freq == 0):
-            self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
-
         self.take_action_cnt += 1
         print(f"step: \033[92m{self.take_action_cnt} / {self.step_lim}\033[0m", end="\r")
 
@@ -1714,7 +1710,8 @@ class Base_Task(gym.Env):
                 self.eval_success = True
                 self.get_obs() # update obs
                 self._take_picture()
-                if (self.eval_video_path is not None):
+                if (self.eval_video_path is not None
+                        and getattr(self, "eval_video_ffmpeg", None) is not None):
                     self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
                 return
 
@@ -1722,6 +1719,11 @@ class Base_Task(gym.Env):
         if self.render_freq:  # UI
             self.viewer.render()
         self._take_picture()
+        if (self.eval_video_path is not None
+                and getattr(self, "eval_video_ffmpeg", None) is not None):
+            self.cameras.update_picture()
+            self.now_obs["third_view_rgb"] = self.cameras.get_observer_rgb()
+            self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
 
 
     def save_camera_images(self, task_name, step_name, generate_num_id, save_dir="./camera_images"):

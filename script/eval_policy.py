@@ -211,7 +211,9 @@ def eval_policy(task_name,
                 expert_check=True,
                 video_size=None,
                 instruction_type=None,
-                episode_done_callback=None):
+                episode_done_callback=None,
+                video_log_episodes=None,
+                trajectory_log_episodes=None):
     print(f"\033[34mTask Name: {args['task_name']}\033[0m", flush=True)
     print(f"\033[34mPolicy Name: {args['policy_name']}\033[0m", flush=True)
 
@@ -276,11 +278,17 @@ def eval_policy(task_name,
         else:
             instruction = args["task_name"]
         TASK_ENV.set_instruction(instruction=instruction)  # set language instruction
-        if args.get("save_data", False):
-            TASK_ENV.get_obs()
-            TASK_ENV._take_picture()
+        record_trajectory = (
+            trajectory_log_episodes is not None
+            and now_id < trajectory_log_episodes
+            and hasattr(model, '_trajectory_actions')
+        )
 
-        if TASK_ENV.eval_video_path is not None:
+        record_video = (
+            TASK_ENV.eval_video_path is not None
+            and (video_log_episodes is None or now_id < video_log_episodes)
+        )
+        if record_video:
             ffmpeg = subprocess.Popen(
                 [
                     "ffmpeg",
@@ -312,28 +320,25 @@ def eval_policy(task_name,
         succ = False
         reset_func(model)
         print(f"[eval] starting episode steps (step_lim={TASK_ENV.step_lim})...", flush=True)
-        step_i = 0
         while TASK_ENV.take_action_cnt < TASK_ENV.step_lim:
-            print(f"[eval] step {step_i}: get_obs...", flush=True)
             observation = TASK_ENV.get_obs()
-            print(f"[eval] step {step_i}: eval (backbone inference)...", flush=True)
             eval_func(TASK_ENV, model, observation)
-            step_i += 1
             if TASK_ENV.eval_success:
                 succ = True
                 break
         # task_total_reward += TASK_ENV.episode_score
-        if TASK_ENV.eval_video_path is not None:
+        if record_video:
             TASK_ENV._del_eval_video_ffmpeg()
-        if args.get("save_data", False):
-            TASK_ENV.merge_pkl_to_hdf5_video()
-            TASK_ENV.remove_data_cache()
+        if record_trajectory and model._trajectory_actions:
+            traj_dir = Path(args["save_path"]) / "trajectory"
+            traj_dir.mkdir(parents=True, exist_ok=True)
+            np.save(str(traj_dir / f"episode{now_id}_actions.npy"), np.array(model._trajectory_actions))
         if episode_done_callback is not None:
             episode_done_callback(
                 episode_idx=now_id,
                 save_dir=Path(args["save_path"]).resolve(),
-                video_logged=TASK_ENV.eval_video_path is not None,
-                trajectory_logged=bool(args.get("save_data", False)),
+                video_logged=record_video,
+                trajectory_logged=record_trajectory,
             )
 
         if succ:
