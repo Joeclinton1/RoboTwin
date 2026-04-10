@@ -34,6 +34,34 @@ parent_directory = os.path.dirname(current_file_path)
 
 
 class Base_Task(gym.Env):
+    # Class-level SAPIEN engine/renderer cache.  Creating the renderer
+    # triggers OptiX shader compilation which is expensive (~seconds).
+    # Reusing the same engine/renderer across episodes avoids this cost.
+    _shared_engine: Optional[sapien.Engine] = None
+    _shared_renderer: Optional[sapien.SapienRenderer] = None
+    _renderer_initialized: bool = False
+
+    @classmethod
+    def _get_or_create_engine_renderer(cls):
+        """Return a cached (engine, renderer) pair, creating on first call."""
+        if cls._shared_engine is None:
+            cls._shared_engine = sapien.Engine()
+            from sapien.render import set_global_config
+            set_global_config(max_num_materials=50000, max_num_textures=50000)
+            cls._shared_renderer = sapien.SapienRenderer()
+            cls._shared_engine.set_renderer(cls._shared_renderer)
+            # Configure ray tracing / rasterization once.
+            if os.environ.get("SAPIEN_DISABLE_RAY_TRACING", "0") == "1":
+                sapien.render.set_camera_shader_dir("default")
+            else:
+                sapien.render.set_camera_shader_dir("rt")
+                sapien.render.set_ray_tracing_samples_per_pixel(32)
+                sapien.render.set_ray_tracing_path_depth(8)
+                sapien.render.set_ray_tracing_denoiser(
+                    os.environ.get("SAPIEN_DENOISER", "oidn")
+                )
+            cls._renderer_initialized = True
+        return cls._shared_engine, cls._shared_renderer
 
     def __init__(self):
         pass
@@ -209,22 +237,11 @@ class Base_Task(gym.Env):
         Set the scene
             - Set up the basic scene: light source, viewer.
         """
-        self.engine = sapien.Engine()
-        # declare sapien renderer
-        from sapien.render import set_global_config
-
-        set_global_config(max_num_materials=50000, max_num_textures=50000)
-        self.renderer = sapien.SapienRenderer()
-        # give renderer to sapien sim
-        self.engine.set_renderer(self.renderer)
-
-        if os.environ.get("SAPIEN_DISABLE_RAY_TRACING", "0") == "1":
-            sapien.render.set_camera_shader_dir("default")
-        else:
-            sapien.render.set_camera_shader_dir("rt")
-            sapien.render.set_ray_tracing_samples_per_pixel(32)
-            sapien.render.set_ray_tracing_path_depth(8)
-            sapien.render.set_ray_tracing_denoiser(os.environ.get("SAPIEN_DENOISER", "oidn"))
+        # Reuse a shared engine/renderer to avoid repeated OptiX shader
+        # compilation (~seconds per call).  The renderer config (RT vs
+        # rasterisation, denoiser, SPP, path depth) is set once on first
+        # creation and stays consistent across episodes.
+        self.engine, self.renderer = self._get_or_create_engine_renderer()
 
         # declare sapien scene
         scene_config = sapien.SceneConfig()
