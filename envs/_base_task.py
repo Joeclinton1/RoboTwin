@@ -126,6 +126,8 @@ class Base_Task(gym.Env):
         self.now_obs = {}
         self.take_action_cnt = 0
         self.eval_video_path = kwags.get("eval_video_save_dir", None)
+        self._subtitle_text: str = ""
+        self._subtitle_color: tuple[int, int, int] = (255, 255, 255)
 
         self.save_freq = kwags.get("save_freq")
         self.world_pcd = None
@@ -533,13 +535,55 @@ class Base_Task(gym.Env):
         rgb = self.cameras.get_rgb()
         save_img(save_path, rgb[camera_name]['rgb'])
 
+    _SUBTITLE_BAR_HEIGHT = 30
+
     def _eval_video_frame(self):
         requested_view = os.environ.get("ROBOTWIN_VIDEO_CAMERA", "").strip().lower()
         if requested_view in {"observer", "observer_camera", "third_view"}:
             third_view_rgb = self.now_obs.get("third_view_rgb")
             if third_view_rgb is not None:
-                return third_view_rgb
-        return self.now_obs["observation"]["head_camera"]["rgb"]
+                frame = third_view_rgb
+            else:
+                frame = self.now_obs["observation"]["head_camera"]["rgb"]
+        else:
+            frame = self.now_obs["observation"]["head_camera"]["rgb"]
+        frame = self._append_subtitle_bar(frame)
+        return frame
+
+    _subtitle_bar_cache = None
+
+    def _append_subtitle_bar(self, frame):
+        import numpy as np
+
+        h, w = frame.shape[:2]
+        bar_h = self._SUBTITLE_BAR_HEIGHT
+        text = self._subtitle_text
+        color = self._subtitle_color
+
+        if self._subtitle_bar_cache is not None and self._subtitle_bar_cache[:2] == (text, color):
+            bar = self._subtitle_bar_cache[2]
+        elif not text:
+            bar = np.zeros((bar_h, w, 3), dtype=np.uint8)
+            self._subtitle_bar_cache = (text, color, bar)
+        else:
+            from PIL import Image, ImageDraw, ImageFont
+
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
+            except (IOError, OSError):
+                font = ImageFont.load_default()
+            bar = np.zeros((bar_h, w, 3), dtype=np.uint8)
+            bar_img = Image.fromarray(bar)
+            draw = ImageDraw.Draw(bar_img)
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            x = max(0, (w - tw) // 2)
+            y = (bar_h - th) // 2
+            draw.text((x, y), text, fill=color, font=font)
+            bar = np.array(bar_img)
+            self._subtitle_bar_cache = (text, color, bar)
+
+        return np.concatenate([frame, bar], axis=0)
 
     def _take_picture(self):  # save data
         if not self.save_data:
