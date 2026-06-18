@@ -77,6 +77,8 @@ class put_object_cabinet(Base_Task):
             model_id=self.selected_model_id,
         )
         self.object.set_mass(0.01)
+        self.arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
+        self.origin_z = self.object.get_pose().p[2]
         self.add_prohibit_area(self.object, padding=0.01)
         self.add_prohibit_area(self.cabinet, padding=0.01)
         self.prohibited_area.append([-0.15, -0.3, 0.15, 0.3])
