@@ -132,6 +132,7 @@ def prepare_eval_context(usr_args):
     if args["eval_video_log"]:
         camera_config = get_camera_config(args["camera"]["head_camera_type"])
         video_size = str(camera_config["w"]) + "x" + str(camera_config["h"] + 30)
+        args["eval_raw_video_size"] = str(camera_config["w"]) + "x" + str(camera_config["h"])
         save_dir.mkdir(parents=True, exist_ok=True)
         args["eval_video_save_dir"] = save_dir
 
@@ -319,6 +320,33 @@ def eval_policy(task_name,
                 stdin=subprocess.PIPE,
             )
             TASK_ENV._set_eval_video_ffmpeg(ffmpeg)
+            raw_ffmpeg = subprocess.Popen(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "rawvideo",
+                    "-pixel_format",
+                    "rgb24",
+                    "-video_size",
+                    args["eval_raw_video_size"],
+                    "-framerate",
+                    "10",
+                    "-i",
+                    "-",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-vcodec",
+                    "libx264",
+                    "-crf",
+                    "23",
+                    f"{TASK_ENV.eval_video_path}/episode{TASK_ENV.test_num}_raw_observer.mp4",
+                ],
+                stdin=subprocess.PIPE,
+            )
+            TASK_ENV._set_eval_raw_video_ffmpeg(raw_ffmpeg)
 
         succ = False
         reset_func(model)
@@ -332,6 +360,7 @@ def eval_policy(task_name,
         # task_total_reward += TASK_ENV.episode_score
         if record_video:
             TASK_ENV._del_eval_video_ffmpeg()
+            TASK_ENV._del_eval_raw_video_ffmpeg()
         if record_trajectory and model._trajectory_actions:
             traj_dir = Path(args["save_path"]) / "trajectory"
             traj_dir.mkdir(parents=True, exist_ok=True)

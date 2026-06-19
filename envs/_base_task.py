@@ -537,18 +537,17 @@ class Base_Task(gym.Env):
 
     _SUBTITLE_BAR_HEIGHT = 30
 
-    def _eval_video_frame(self):
+    def _eval_video_base_frame(self):
         requested_view = os.environ.get("ROBOTWIN_VIDEO_CAMERA", "").strip().lower()
         if requested_view in {"observer", "observer_camera", "third_view"}:
             third_view_rgb = self.now_obs.get("third_view_rgb")
             if third_view_rgb is not None:
-                frame = third_view_rgb
-            else:
-                frame = self.now_obs["observation"]["head_camera"]["rgb"]
-        else:
-            frame = self.now_obs["observation"]["head_camera"]["rgb"]
-        frame = self._append_subtitle_bar(frame)
-        return frame
+                return third_view_rgb
+            return self.now_obs["observation"]["head_camera"]["rgb"]
+        return self.now_obs["observation"]["head_camera"]["rgb"]
+
+    def _eval_video_frame(self):
+        return self._append_subtitle_bar(self._eval_video_base_frame())
 
     _subtitle_bar_cache = None
 
@@ -654,6 +653,9 @@ class Base_Task(gym.Env):
     def _set_eval_video_ffmpeg(self, ffmpeg):
         self.eval_video_ffmpeg = ffmpeg
 
+    def _set_eval_raw_video_ffmpeg(self, ffmpeg):
+        self.eval_raw_video_ffmpeg = ffmpeg
+
     def close_env(self, clear_cache=False):
         if clear_cache:
             # for actor in self.scene.get_all_actors():
@@ -666,6 +668,12 @@ class Base_Task(gym.Env):
             self.eval_video_ffmpeg.stdin.close()
             self.eval_video_ffmpeg.wait()
             del self.eval_video_ffmpeg
+
+    def _del_eval_raw_video_ffmpeg(self):
+        if getattr(self, "eval_raw_video_ffmpeg", None):
+            self.eval_raw_video_ffmpeg.stdin.close()
+            self.eval_raw_video_ffmpeg.wait()
+            del self.eval_raw_video_ffmpeg
 
     def delay(self, delay_time, save_freq=None):
         render_freq = self.render_freq
@@ -1754,6 +1762,8 @@ class Base_Task(gym.Env):
                 self._take_picture()
                 if (self.eval_video_path is not None
                         and getattr(self, "eval_video_ffmpeg", None) is not None):
+                    if getattr(self, "eval_raw_video_ffmpeg", None) is not None:
+                        self.eval_raw_video_ffmpeg.stdin.write(self._eval_video_base_frame().tobytes())
                     self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
                 return
 
@@ -1765,6 +1775,8 @@ class Base_Task(gym.Env):
                 and getattr(self, "eval_video_ffmpeg", None) is not None):
             self.cameras.update_picture()
             self.now_obs["third_view_rgb"] = self.cameras.get_observer_rgb()
+            if getattr(self, "eval_raw_video_ffmpeg", None) is not None:
+                self.eval_raw_video_ffmpeg.stdin.write(self._eval_video_base_frame().tobytes())
             self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
 
 
