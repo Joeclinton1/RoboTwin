@@ -131,7 +131,8 @@ def prepare_eval_context(usr_args):
 
     if args["eval_video_log"]:
         camera_config = get_camera_config(args["camera"]["head_camera_type"])
-        video_size = str(camera_config["w"]) + "x" + str(camera_config["h"] + 30)
+        subtitle_bar_height = 52
+        video_size = str(camera_config["w"]) + "x" + str(camera_config["h"] + subtitle_bar_height)
         args["eval_raw_video_size"] = str(camera_config["w"]) + "x" + str(camera_config["h"])
         save_dir.mkdir(parents=True, exist_ok=True)
         args["eval_video_save_dir"] = save_dir

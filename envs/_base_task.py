@@ -535,7 +535,7 @@ class Base_Task(gym.Env):
         rgb = self.cameras.get_rgb()
         save_img(save_path, rgb[camera_name]['rgb'])
 
-    _SUBTITLE_BAR_HEIGHT = 30
+    _SUBTITLE_BAR_HEIGHT = 52
 
     def _eval_video_base_frame(self):
         requested_view = os.environ.get("ROBOTWIN_VIDEO_CAMERA", "").strip().lower()
@@ -567,18 +567,59 @@ class Base_Task(gym.Env):
         else:
             from PIL import Image, ImageDraw, ImageFont
 
-            try:
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
-            except (IOError, OSError):
-                font = ImageFont.load_default()
             bar = np.zeros((bar_h, w, 3), dtype=np.uint8)
             bar_img = Image.fromarray(bar)
             draw = ImageDraw.Draw(bar_img)
-            bbox = draw.textbbox((0, 0), text, font=font)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            x = max(0, (w - tw) // 2)
-            y = (bar_h - th) // 2
-            draw.text((x, y), text, fill=color, font=font)
+
+            def _load_font(size):
+                try:
+                    return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
+                except (IOError, OSError):
+                    return ImageFont.load_default()
+
+            max_width = max(1, w - 8)
+
+            def _wrap_words(raw, font):
+                words = str(raw).split()
+                lines = []
+                current = ""
+                for word in words:
+                    candidate = f"{current} {word}".strip()
+                    bbox = draw.textbbox((0, 0), candidate, font=font)
+                    if bbox[2] - bbox[0] <= max_width or not current:
+                        current = candidate
+                    else:
+                        lines.append(current)
+                        current = word
+                if current:
+                    lines.append(current)
+                return lines
+
+            font = _load_font(13)
+            lines = _wrap_words(text, font)
+            for size in range(12, 7, -1):
+                if len(lines) <= 2:
+                    break
+                font = _load_font(size)
+                lines = _wrap_words(text, font)
+            if len(lines) > 2:
+                lines = lines[:2]
+                while lines[-1]:
+                    candidate = f"{lines[-1]}..."
+                    bbox = draw.textbbox((0, 0), candidate, font=font)
+                    if bbox[2] - bbox[0] <= max_width:
+                        lines[-1] = candidate
+                        break
+                    lines[-1] = lines[-1][:-1].rstrip()
+            line_boxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
+            line_heights = [bbox[3] - bbox[1] for bbox in line_boxes]
+            total_h = sum(line_heights) + max(0, len(lines) - 1) * 2
+            y = max(0, (bar_h - total_h) // 2)
+            for line, bbox, line_h in zip(lines, line_boxes, line_heights):
+                tw = bbox[2] - bbox[0]
+                x = max(0, (w - tw) // 2)
+                draw.text((x, y), line, fill=color, font=font)
+                y += line_h + 2
             bar = np.array(bar_img)
             self._subtitle_bar_cache = (text, color, bar)
 
