@@ -549,6 +549,22 @@ class Base_Task(gym.Env):
     def _eval_video_frame(self):
         return self._append_subtitle_bar(self._eval_video_base_frame())
 
+    def _refresh_eval_video_frame_source(self):
+        requested_view = os.environ.get("ROBOTWIN_VIDEO_CAMERA", "").strip().lower()
+        self.cameras.update_picture()
+        if requested_view in {"observer", "observer_camera", "third_view"}:
+            self.now_obs["third_view_rgb"] = self.cameras.get_observer_rgb()
+            return
+
+        camera_name = requested_view or "head_camera"
+        rgb = self.cameras.get_rgb()
+        if camera_name not in rgb:
+            camera_name = "head_camera"
+        if camera_name in rgb:
+            observation = self.now_obs.setdefault("observation", {})
+            camera_obs = observation.setdefault(camera_name, {})
+            camera_obs.update(rgb[camera_name])
+
     _subtitle_bar_cache = None
 
     def _append_subtitle_bar(self, frame):
@@ -1803,6 +1819,7 @@ class Base_Task(gym.Env):
                 self._take_picture()
                 if (self.eval_video_path is not None
                         and getattr(self, "eval_video_ffmpeg", None) is not None):
+                    self._refresh_eval_video_frame_source()
                     if getattr(self, "eval_raw_video_ffmpeg", None) is not None:
                         self.eval_raw_video_ffmpeg.stdin.write(self._eval_video_base_frame().tobytes())
                     self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
@@ -1814,8 +1831,7 @@ class Base_Task(gym.Env):
         self._take_picture()
         if (self.eval_video_path is not None
                 and getattr(self, "eval_video_ffmpeg", None) is not None):
-            self.cameras.update_picture()
-            self.now_obs["third_view_rgb"] = self.cameras.get_observer_rgb()
+            self._refresh_eval_video_frame_source()
             if getattr(self, "eval_raw_video_ffmpeg", None) is not None:
                 self.eval_raw_video_ffmpeg.stdin.write(self._eval_video_base_frame().tobytes())
             self.eval_video_ffmpeg.stdin.write(self._eval_video_frame().tobytes())
