@@ -8,6 +8,12 @@ class open_laptop(Base_Task):
 
     def setup_demo(self, is_test=False, **kwags):
         super()._init_task_env_(**kwags)
+        # check_success() is called during policy rollouts even when the expert
+        # planner is disabled.  Initialize the task's active arm from the same
+        # scene-geometry rule used by play_once() so that success evaluation is
+        # defined for non-expert policies as well.
+        face_prod = get_face_prod(self.laptop.get_pose().q, [1, 0, 0], [1, 0, 0])
+        self.arm_tag = ArmTag("left" if face_prod > 0 else "right")
 
     def load_actors(self):
         self.model_name = "015_laptop"

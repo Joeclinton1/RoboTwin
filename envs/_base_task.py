@@ -48,7 +48,16 @@ class Base_Task(gym.Env):
             cls._shared_engine = sapien.Engine()
             from sapien.render import set_global_config
             set_global_config(max_num_materials=50000, max_num_textures=50000)
-            cls._shared_renderer = sapien.SapienRenderer()
+            sim_gpu_id = os.environ.get("ROBOTWIN_SIM_GPU_ID")
+            render_device = (
+                sapien.Device(f"cuda:{int(sim_gpu_id)}")
+                if sim_gpu_id is not None
+                else None
+            )
+            # The legacy sapien.SapienRenderer wrapper discards its device
+            # keyword.  Instantiate the underlying render class so explicit
+            # split-GPU routing is honored.
+            cls._shared_renderer = sapien.render.SapienRenderer(render_device)
             cls._shared_engine.set_renderer(cls._shared_renderer)
             # Configure ray tracing / rasterization once.
             if os.environ.get("SAPIEN_DISABLE_RAY_TRACING", "0") == "1":
